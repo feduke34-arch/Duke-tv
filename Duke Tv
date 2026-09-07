@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>FibeStream IPTV</title>
+  
+  <!-- HLS.js for IPTV Video Playback -->
+  <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  
+  <style>
+    :root {
+      --bg-main: #0B0E14;
+      --bg-sidebar: #121721;
+      --bg-card: #1A202C;
+      --bg-card-hover: #2D3748;
+      --accent-blue: #0052CC; /* Bell Fibe Blue */
+      --accent-red: #DA291C;  /* Rogers Red */
+      --text-main: #FFFFFF;
+      --text-muted: #A0AEC0;
+      --border-color: #2D3748;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+    body { background-color: var(--bg-main); color: var(--text-main); height: 100vh; overflow: hidden; display: flex; }
+
+    /* --- SIDEBAR NAVIGATION (Bell Fibe / Rogers Style) --- */
+    .sidebar {
+      width: 240px;
+      background-color: var(--bg-sidebar);
+      border-right: 1px solid var(--border-color);
+      display: flex;
+      flex-direction: column;
+      padding: 20px 10px;
+      z-index: 100;
+    }
+    .brand { display: flex; align-items: center; gap: 10px; padding: 0 10px 25px; font-size: 1.2rem; font-weight: bold; color: #FFF; }
+    .brand span { color: var(--accent-blue); }
+    
+    .nav-list { list-style: none; display: flex; flex-direction: column; gap: 8px; }
+    .nav-item {
+      display: flex; align-items: center; gap: 12px; padding: 12px 16px; border-radius: 8px;
+      color: var(--text-muted); cursor: pointer; transition: all 0.2s ease; font-weight: 500;
+    }
+    .nav-item:hover, .nav-item.active { background-color: var(--accent-blue); color: #FFF; }
+
+    /* --- MAIN CONTENT AREA --- */
+    .main-content { flex: 1; display: flex; flex-direction: column; overflow: hidden; position: relative; }
+
+    /* TOP BAR */
+    .topbar {
+      height: 60px; border-bottom: 1px solid var(--border-color); display: flex;
+      align-items: center; justify-content: space-between; padding: 0 25px; background: var(--bg-sidebar);
+    }
+    .region-select { display: flex; gap: 10px; }
+    .btn {
+      background: var(--bg-card); border: 1px solid var(--border-color); color: var(--text-main);
+      padding: 8px 16px; border-radius: 6px; cursor: pointer; transition: 0.2s; font-size: 0.9rem;
+    }
+    .btn:hover, .btn.active { background: var(--accent-blue); border-color: var(--accent-blue); color: white; }
+    .btn-danger { background: var(--accent-red); border: none; }
+
+    /* VIEW SECTIONS */
+    .view-section { display: none; flex: 1; padding: 25px; overflow-y: auto; }
+    .view-section.active { display: flex; flex-direction: column; }
+
+    /* LIVE TV GRID & PLAYER */
+    .player-container {
+      width: 100%; height: 360px; background: #000; border-radius: 12px;
+      overflow: hidden; margin-bottom: 20px; position: relative;
+    }
+    video { width: 100%; height: 100%; object-fit: contain; }
+
+    .channel-grid {
+      display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 15px;
+    }
+    .channel-card {
+      background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 8px;
+      padding: 12px; display: flex; flex-direction: column; align-items: center; gap: 10px;
+      cursor: pointer; transition: 0.2s; text-align: center;
+    }
+    .channel-card:hover { transform: translateY(-3px); border-color: var(--accent-blue); background: var(--bg-card-hover); }
+    .channel-card img { width: 50px; height: 50px; object-fit: contain; border-radius: 5px; }
+
+    /* VOD GRID */
+    .vod-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 20px; }
+    .vod-card {
+      background: var(--bg-card); border-radius: 8px; overflow: hidden; cursor: pointer; transition: 0.2s;
+    }
+    .vod-card:hover { transform: scale(1.04); }
+    .vod-card img { width: 100%; height: 220px; object-fit: cover; }
+    .vod-info { padding: 10px; font-size: 0.85rem; }
+    .vod-title { font-weight: bold; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+    /* INPUT MODAL/FORM */
+    .form-group { margin-bottom: 15px; display: flex; flex-direction: column; gap: 5px; }
+    input, select {
+      background: var(--bg-card); border: 1px solid var(--border-color); color: #FFF;
+      padding: 12px; border-radius: 6px; outline: none; font-size: 1rem;
+    }
+    input:focus { border-color: var(--accent-blue); }
+
+    /* MOBILE RESPONSIVENESS */
+    @media (max-width: 768px) {
+      body { flex-direction: column; }
+      .sidebar { width: 100%; height: auto; flex-direction: row; justify-content: space-between; padding: 10px; }
+      .brand span { display: none; }
+      .nav-list { flex-direction: row; }
+      .nav-item span { display: none; }
+      .player-container { height: 220px; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- SIDEBAR NAVIGATION -->
+  <nav class="sidebar">
+    <div class="brand">
+      <i data-lucide="tv"></i>
+      <span>Fibe<b>Stream</b></span>
+    </div>
+    <ul class="nav-list">
+      <li class="nav-item active" onclick="switchTab('live')">
+        <i data-lucide="play-circle"></i> <span>Live TV</span>
+      </li>
+      <li class="nav-item" onclick="switchTab('vod')">
+        <i data-lucide="film"></i> <span>VOD Movies</span>
+      </li>
+      <li class="nav-item" onclick="switchTab('playlist')">
+        <i data-lucide="list-plus"></i> <span>Add M3U / Xtream</span>
+      </li>
+    </ul>
+  </nav>
+
+  <!-- MAIN APPLICATION CONTENT -->
+  <main class="main-content">
+    
+    <!-- TOP BAR CONTROL -->
+    <header class="topbar">
+      <div class="region-select">
+        <button class="btn active" id="btn-us" onclick="fetchAutoPlaylist('us')">🇺🇸 US Live</button>
+        <button class="btn" id="btn-ca" onclick="fetchAutoPlaylist('ca')">🇨🇦 Canada</button>
+        <button class="btn" id="btn-uk" onclick="fetchAutoPlaylist('uk')">🇬🇧 UK Live</button>
+      </div>
+      <button class="btn btn-danger" onclick="refreshStreams()">
+        <i data-lucide="refresh-cw" style="width:14px;"></i> Update Daily Streams
+      </button>
+    </header>
+
+    <!-- 1. LIVE TV VIEW -->
+    <section id="view-live" class="view-section active">
+      <div class="player-container">
+        <video id="video-player" controls autoplay></video>
+      </div>
+      <h3 style="margin-bottom: 15px;">Live Channels Grid</h3>
+      <div id="channel-grid" class="channel-grid">
+        <!-- Channels dynamically loaded here -->
+      </div>
+    </section>
+
+    <!-- 2. VOD SECTION -->
+    <section id="view-vod" class="view-section">
+      <h2 style="margin-bottom: 20px;">On Demand Movies & TV Shows</h2>
+      <div id="vod-grid" class="vod-grid">
+        <!-- VOD items loaded dynamically -->
+      </div>
+    </section>
+
+    <!-- 3. M3U & XTREAM CODES INPUT SECTION -->
+    <section id="view-playlist" class="view-section">
+      <h2 style="margin-bottom: 20px;">Custom Playlist Configuration</h2>
+      <div style="max-width: 500px;">
+        <div class="form-group">
+          <label>M3U Playlist URL</label>
+          <input type="url" id="m3u-input-url" placeholder="https://example.com/playlist.m3u">
+          <button class="btn" onclick="loadCustomM3U()" style="margin-top: 5px;">Load M3U URL</button>
+        </div>
+
+        <hr style="border-color: var(--border-color); margin: 25px 0;">
+
+        <h3>Xtream Codes API</h3>
+        <div class="form-group" style="margin-top: 10px;">
+          <label>Server URL</label>
+          <input type="text" id="xc-url" placeholder="http://xtream-server.com:8080">
+        </div>
+        <div class="form-group">
+          <label>Username</label>
+          <input type="text" id="xc-user" placeholder="Username">
+        </div>
+        <div class="form-group">
+          <label>Password</label>
+          <input type="password" id="xc-pass" placeholder="Password">
+        </div>
+        <button class="btn" onclick="loadXtreamCodes()">Login to Xtream</button>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- JAVASCRIPT CORE LOGIC -->
+  <script>
+    // Initialize Lucide Icons
+    lucide.createIcons();
+
+    let hls = new Hls();
+    const video = document.getElementById('video-player');
+
+    // Daily Auto-Updating IPTV Feeds (Free Public M3U Collections)
+    const AUTO_FEEDS = {
+      us: "https://iptv-org.github.io/iptv/countries/us.m3u",
+      ca: "https://iptv-org.github.io/iptv/countries/ca.m3u",
+      uk: "https://iptv-org.github.io/iptv/countries/uk.m3u"
+    };
+
+    // Public VOD Demo Library
+    const DEMO_VOD = [
+      { title: "Sintel (Sci-Fi Short)", poster: "https://upload.wikimedia.org/wikipedia/commons/8/8f/Sintel_poster.jpg", stream: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/Sintel.mp4" },
+      { title: "Tears of Steel", poster: "https://upload.wikimedia.org/wikipedia/commons/0/0c/Tears_of_Steel_poster.jpg", stream: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/TearsOfSteel.mp4" },
+      { title: "Big Buck Bunny", poster: "https://upload.wikimedia.org/wikipedia/commons/c/c5/Big_buck_bunny_poster_big.jpg", stream: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4" }
+    ];
+
+    window.onload = () => {
+      fetchAutoPlaylist('us');
+      loadVODLibrary();
+    };
+
+    // --- NAVIGATION TAB SWITCHING ---
+    function switchTab(tabName) {
+      document.querySelectorAll('.view-section').forEach(el => el.classList.remove('active'));
+      document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
+      
+      document.getElementById(`view-${tabName}`).classList.add('active');
+      event.currentTarget.classList.add('active');
+    }
+
+    // --- STREAM PLAYER ENGINE (HLS.js) ---
+    function playStream(url) {
+      if (Hls.isSupported() && url.includes('.m3u8')) {
+        hls.destroy();
+        hls = new Hls();
+        hls.loadSource(url);
+        hls.attachMedia(video);
+        hls.on(Hls.Events.MANIFEST_PARSED, () => video.play());
+      } else if (video.canPlayType('application/vnd.apple.mpegurl') || url.includes('.mp4')) {
+        // Native Apple HLS (iOS Safari) or standard MP4
+        video.src = url;
+        video.play();
+      } else {
+        alert("Format not directly supported by browser engine.");
+      }
+    }
+
+    // --- DYNAMIC DAILY M3U SCRAPER / FETCH ---
+    async function fetchAutoPlaylist(regionKey) {
+      document.querySelectorAll('.region-select .btn').forEach(b => b.classList.remove('active'));
+      document.getElementById(`btn-${regionKey}`).classList.add('active');
+
+      const grid = document.getElementById('channel-grid');
+      grid.innerHTML = "<p>Updating & Scraping Fresh Daily M3U Streams...</p>";
+
+      try {
+        const response = await fetch(AUTO_FEEDS[regionKey]);
+        const m3uText = await response.text();
+        const channels = parseM3U(m3uText);
+        renderChannels(channels);
+      } catch (err) {
+        grid.innerHTML = "<p>Error loading streams. Please check your internet connection.</p>";
+      }
+    }
+
+    // --- M3U PARSER ENGINE ---
+    function parseM3U(m3uString) {
+      const lines = m3uString.split('\n');
+      const channels = [];
+      let currentChannel = {};
+
+      lines.forEach(line => {
+        line = line.trim();
+        if (line.startsWith('#EXTINF:')) {
+          const nameMatch = line.match(/,(.+)$/);
+          const logoMatch = line.match(/tvg-logo="([^"]+)"/);
+          
+          currentChannel.name = nameMatch ? nameMatch[1] : "Unknown Channel";
+          currentChannel.logo = logoMatch ? logoMatch[1] : "https://via.placeholder.com/50?text=TV";
+        } else if (line.startsWith('http')) {
+          currentChannel.url = line;
+          channels.push(currentChannel);
+          currentChannel = {};
+        }
+      });
+      return channels.slice(0, 40); // Render top 40 for optimal performance
+    }
+
+    function renderChannels(channels) {
+      const grid = document.getElementById('channel-grid');
+      grid.innerHTML = "";
+
+      channels.forEach((ch, idx) => {
+        const card = document.createElement('div');
+        card.className = 'channel-card';
+        card.onclick = () => playStream(ch.url);
+        card.innerHTML = `
+          <img src="${ch.logo}" onerror="this.src='https://via.placeholder.com/50?text=TV'">
+          <div style="font-size:0.85rem; font-weight:600;">${ch.name}</div>
+        `;
+        grid.appendChild(card);
+
+        // Auto play the first available stream
+        if (idx === 0) playStream(ch.url);
+      });
+    }
+
+    // --- USER CUSTOM M3U & XTREAM CODES ENGINE ---
+    async function loadCustomM3U() {
+      const url = document.getElementById('m3u-input-url').value;
+      if (!url) return alert('Please enter a valid M3U URL');
+      
+      try {
+        const res = await fetch(url);
+        const text = await res.text();
+        const channels = parseM3U(text);
+        renderChannels(channels);
+        switchTab('live');
+      } catch (e) {
+        alert("Failed to fetch M3U file. Ensure CORS is enabled on server.");
+      }
+    }
+
+    function loadXtreamCodes() {
+      const host = document.getElementById('xc-url').value;
+      const user = document.getElementById('xc-user').value;
+      const pass = document.getElementById('xc-pass').value;
+
+      if (!host || !user || !pass) return alert('Fill in all Xtream fields.');
+
+      // Constructed Xtream Codes M3U endpoint
+      const constructedM3U = `${host}/get.php?username=${user}&password=${pass}&type=m3u_plus&output=m3u8`;
+      
+      document.getElementById('m3u-input-url').value = constructedM3U;
+      loadCustomM3U();
+    }
+
+    // --- VOD RENDERER ---
+    function loadVODLibrary() {
+      const vodContainer = document.getElementById('vod-grid');
+      vodContainer.innerHTML = "";
+
+      DEMO_VOD.forEach(item => {
+        const card = document.createElement('div');
+        card.className = 'vod-card';
+        card.onclick = () => {
+          switchTab('live');
+          playStream(item.stream);
+        };
+        card.innerHTML = `
+          <img src="${item.poster}">
+          <div class="vod-info">
+            <div class="vod-title">${item.title}</div>
+          </div>
+        `;
+        vodContainer.appendChild(card);
+      });
+    }
+
+    function refreshStreams() {
+      fetchAutoPlaylist('us');
+    }
+  </script>
+</body>
+</html>
